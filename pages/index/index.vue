@@ -223,7 +223,7 @@
 					<view>
 						<view class="ai-kicker">MINE SAFETY COPILOT</view>
 						<view class="ai-title">DeepSeek 智能研判中心</view>
-						<view class="ai-subtitle">报警触发即刻分析，支持追问人员轨迹、跌倒时间和风险原因</view>
+						<view class="ai-subtitle">仅手动分析数据，支持追问人员轨迹、跌倒时间和风险原因</view>
 					</view>
 				</view>
 				<view class="ai-actions">
@@ -267,7 +267,7 @@
 				</view>
 			</view>
 			<view class="ai-reason">
-				{{ aiDecision && aiDecision.reason ? aiDecision.reason : '只有触发报警或手动点击时，系统才会调用 DeepSeek 分析当前数据和近期趋势。' }}
+				{{ aiDecision && aiDecision.reason ? aiDecision.reason : '点击“立即 AI 分析”时，系统才会调用 DeepSeek 分析当前数据和近期趋势。' }}
 			</view>
 		</view>
 
@@ -962,8 +962,7 @@
 						this.updateTime = this.formatTime(new Date());
 						this.recordHistory();
 						this.setColorGradient();
-						const alarmChanged = this.checkAlarmThreshold();
-						if (alarmChanged) this.analyzeDataWithDeepseek(true);
+						this.checkAlarmThreshold();
 					},
 					fail: (err) => {
 						console.error('request error:', err);
