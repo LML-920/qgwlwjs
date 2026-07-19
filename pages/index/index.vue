@@ -28,7 +28,7 @@
 						<view class="status-dot-ring">
 							<view class="status-dot"></view>
 						</view>
-						<text>{{ isOnenetConnected ? '云端已连接' : '云端已断开' }}</text>
+						<text>{{ isOnenetConnected ? '云端已连接' : (onenetErrorMessage || '云端已断开') }}</text>
 					</view>
 					<view class="update-time">
 						<text class="time-icon">⏱</text>
@@ -214,19 +214,38 @@
 
 		<!-- 绱ф€ユ挙绂绘寜閽?-->
 		<view class="ai-panel">
+			<view class="ai-panel-glow"></view>
 			<view class="ai-panel-head">
 				<view class="ai-title-wrap">
-					<view class="ai-icon">AI</view>
+					<view class="ai-icon">
+						<text>AI</text>
+					</view>
 					<view>
-						<view class="ai-title">DeepSeek 智能分析</view>
-						<view class="ai-subtitle">结合当前数据、人员轨迹和状态历史，只分析不下发指令</view>
+						<view class="ai-kicker">MINE SAFETY COPILOT</view>
+						<view class="ai-title">DeepSeek 智能研判中心</view>
+						<view class="ai-subtitle">报警触发即刻分析，支持追问人员轨迹、跌倒时间和风险原因</view>
 					</view>
 				</view>
 				<view class="ai-actions">
-					<button class="ai-chat-btn" @click="openAiChat">AI 对话</button>
+					<button class="ai-chat-btn" @click="openAiChat">
+						<text class="ai-btn-mark">✦</text>
+						<text>打开 AI 对话</text>
+					</button>
 					<button class="ai-analyze-btn" :disabled="isAiAnalyzing" @click="analyzeDataWithDeepseek(true)">
 						{{ isAiAnalyzing ? '分析中...' : '立即 AI 分析' }}
 					</button>
+				</view>
+			</view>
+			<view class="ai-signal-row">
+				<view class="ai-signal-pill">
+					<text class="ai-signal-dot"></text>
+					<text>云端推理已就绪</text>
+				</view>
+				<view class="ai-signal-pill">
+					<text>历史轨迹 {{ historyRecords.area.length }} 条</text>
+				</view>
+				<view class="ai-signal-pill">
+					<text>状态记录 {{ historyRecords.sstatus.length }} 条</text>
 				</view>
 			</view>
 			<view class="ai-grid">
@@ -261,14 +280,14 @@
 						class="evacuation-btn"
 						:class="{ sending: isSending }"
 						@click="showEvacuationModal"
-						:disabled="!isOnenetConnected || isSending"
+						:disabled="isSending"
 					>
 						<text class="btn-icon">⚠</text>
 						<text>{{ isSending ? '指令发送中...' : '紧急撤离' }}</text>
 					</button>
 				</view>
 				<view class="evacuation-hint" v-if="!isOnenetConnected">
-					<text>云端未连接，无法发送撤离指令</text>
+					<text>云端监测重连中，撤离指令仍会强制尝试发送</text>
 				</view>
 			</view>
 		</view>
@@ -317,7 +336,7 @@
 					<button class="modal-btn modal-btn-cancel" @click="cancelEvacuation">
 						<text>否，暂不撤离</text>
 					</button>
-					<button class="modal-btn modal-btn-confirm" @click="confirmEvacuation">
+					<button class="modal-btn modal-btn-confirm" :disabled="isSending" @click.stop="confirmEvacuation">
 						<text>是，立即撤离</text>
 					</button>
 				</view>
@@ -373,19 +392,46 @@
 
 		<view class="ai-chat-overlay" v-if="aiChatVisible" @click="closeAiChat">
 			<view class="ai-chat-modal" @click.stop>
+				<view class="ai-chat-orbit one"></view>
+				<view class="ai-chat-orbit two"></view>
 				<view class="ai-chat-head">
 					<view>
-						<view class="ai-chat-title">DeepSeek AI 对话</view>
-						<view class="ai-chat-tip">可以问人员轨迹、跌倒时间、当前风险，也可以问普通问题。</view>
+						<view class="ai-chat-kicker">DEEPSEEK LIVE ASSISTANT</view>
+						<view class="ai-chat-title">矿洞安全 AI 指挥舱</view>
+						<view class="ai-chat-tip">对话记录会保留，可追问人员经过矿洞、跌倒时间、传感器异常和当前风险。</view>
 					</view>
 					<view class="ai-chat-head-actions">
 						<button class="ai-chat-clear" @click="clearAiChat">清空</button>
 						<button class="ai-chat-close" @click="closeAiChat">×</button>
 					</view>
 				</view>
-				<scroll-view class="ai-chat-messages" scroll-y>
+				<view class="ai-chat-metrics">
+					<view class="ai-chat-metric">
+						<text class="metric-label">模型</text>
+						<text class="metric-value">DeepSeek</text>
+					</view>
+					<view class="ai-chat-metric">
+						<text class="metric-label">位置历史</text>
+						<text class="metric-value">{{ historyRecords.area.length }} 条</text>
+					</view>
+					<view class="ai-chat-metric">
+						<text class="metric-label">状态历史</text>
+						<text class="metric-value">{{ historyRecords.sstatus.length }} 条</text>
+					</view>
+				</view>
+				<view class="ai-chat-quick-row">
+					<button
+						class="ai-chat-quick"
+						v-for="item in aiQuickQuestions"
+						:key="item"
+						:disabled="isAiChatting"
+						@click="askAiQuickQuestion(item)"
+					>{{ item }}</button>
+				</view>
+				<scroll-view class="ai-chat-messages" scroll-y :scroll-top="aiChatScrollTop" scroll-with-animation>
 					<view class="ai-chat-empty" v-if="aiChatMessages.length === 0">
-						AI 会结合当前数据、人员位置历史和状态历史回答。
+						<view class="ai-chat-empty-title">等待你的第一条问题</view>
+						<view class="ai-chat-empty-text">建议先问“人员经过了哪些矿洞”或“最近一次报警原因”。</view>
 					</view>
 					<view
 						class="ai-chat-message"
@@ -402,7 +448,7 @@
 				<view class="ai-chat-form">
 					<input class="ai-chat-input" v-model="aiQuestion" placeholder="输入你的问题" @confirm="askAiQuestion" />
 					<button class="ai-chat-send" :disabled="isAiChatting" @click="askAiQuestion">
-						{{ isAiChatting ? '思考中...' : '发送' }}
+						{{ isAiChatting ? '思考中' : '发送' }}
 					</button>
 				</view>
 			</view>
@@ -414,8 +460,11 @@
 	const IS_LOCAL_DEEPSEEK = typeof location !== 'undefined' && ['localhost', '127.0.0.1'].includes(location.hostname);
 	const DEEPSEEK_PROXY_URL = IS_LOCAL_DEEPSEEK ? 'http://127.0.0.1:8787/analyze' : '/.netlify/functions/deepseek-analyze';
 	const DEEPSEEK_CHAT_URL = IS_LOCAL_DEEPSEEK ? 'http://127.0.0.1:8787/chat' : '/.netlify/functions/deepseek-chat';
-	const ONENET_QUERY_URL = IS_LOCAL_DEEPSEEK ? 'https://iot-api.heclouds.com/thingmodel/query-device-property' : '/.netlify/functions/onenet-query';
-	const ONENET_SET_DESIRED_URL = IS_LOCAL_DEEPSEEK ? 'https://iot-api.heclouds.com/thingmodel/set-device-desired-property' : '/.netlify/functions/onenet-set-desired';
+	const ONENET_QUERY_URL = 'https://iot-api.heclouds.com/thingmodel/query-device-property';
+	const ONENET_SET_DESIRED_URL = 'https://iot-api.heclouds.com/thingmodel/set-device-desired-property';
+	const ONENET_PRODUCT_ID = '0TC2zqK8BU';
+	const ONENET_DEVICE_NAME = 'ESP32S3';
+	const ONENET_AUTH_KEY = 'UU/bwXd9gVUzaYNL14V3jRXXIVXL4QuFA8Vrm4FpKxk';
 
 	export default {
 		data() {
@@ -430,7 +479,11 @@
 				sstatus: '',
 				help: '',
 				updateTime: '',
-				isOnenetConnected: true,
+				isOnenetConnected: false,
+				onenetErrorMessage: '',
+				onenetFailCount: 0,
+				onenetMaxFailCount: 3,
+				isFetchingOnenet: false,
 				isAlarm: false,
 				lastAlarmState: false,
 				alarmMessage: '',
@@ -439,11 +492,11 @@
 				mq2BgColor: '',
 				mq7BgColor: '',
 				areaColor: '',
-				token: typeof localStorage !== 'undefined' ? (localStorage.getItem('ONENET_AUTH') || '') : '',
+				token: '',
+				onenetAuthToken: '',
+				onenetAuthExpireAt: 0,
 				timer: null,
 				isSending: false,
-				maxRetryTimes: 2,
-				retryDelay: 1000,
 				aiEnabled: true,
 				isAiAnalyzing: false,
 				aiAnalyzeCooldown: 45000,
@@ -453,7 +506,14 @@
 				aiQuestion: '',
 				aiAnswer: '',
 				aiChatMessages: [],
+				aiChatScrollTop: 0,
 				aiChatStorageKey: 'deepseekAiChatMessages',
+				aiQuickQuestions: [
+					'人员经过了哪些矿洞？',
+					'最近一次跌倒是什么时候？',
+					'当前风险等级是多少？',
+					'最近有哪些异常？'
+				],
 				isAiChatting: false,
 				showModal: false,
 				historyModalVisible: false,
@@ -652,20 +712,13 @@
 			},
 			showEvacuationModal() {
 				if (this.isSending) return;
-				if (!this.isOnenetConnected) {
-					uni.showToast({
-						title: 'ONENET骞冲彴鏈繛鎺ワ紝鏃犳硶鍙戦€佹寚浠わ紒',
-						icon: 'error',
-						duration: 3000
-					});
-					return;
-				}
 				this.showModal = true;
 			},
 			cancelEvacuation() {
 				this.showModal = false;
 			},
 			confirmEvacuation() {
+				if (this.isSending) return;
 				this.showModal = false;
 				this.sendEvacuationCmd();
 			},
@@ -673,23 +726,22 @@
 				uni.getNetworkType({
 					success: (res) => {
 						console.log('缃戠粶绫诲瀷妫€娴嬬粨鏋滐細', res.networkType);
-						const wifiTypes = ['wifi', 'WIFI', 'WLAN'];
-						this.isOnenetConnected = wifiTypes.includes(res.networkType);
-						this.checkOnenetAccessibility();
+						if (res.networkType === 'none') {
+							this.isOnenetConnected = false;
+							this.onenetErrorMessage = '当前网络不可用';
+						}
 					},
 					fail: (err) => {
 						console.error('缃戠粶妫€娴嬪け璐ワ細', err);
-						this.isOnenetConnected = true;
 					}
 				});
 			},
 			watchNetworkChange() {
 				uni.onNetworkStatusChange((res) => {
 					console.log('缃戠粶鐘舵€佸彉鍖栵細', res);
-					if (res.isConnected) {
-						this.isOnenetConnected = res.networkType === 'wifi';
-					} else {
+					if (!res.isConnected) {
 						this.isOnenetConnected = false;
+						this.onenetErrorMessage = '当前网络不可用';
 					}
 				});
 			},
@@ -710,48 +762,215 @@
 					}
 				});
 			},
-			fetchDevData() {
+			getOnenetPropertyList(payload) {
+				const result = [];
+				const visited = new Set();
+				const scan = (node, fallbackIdentifier = '') => {
+					if (!node || result.length > 200) return;
+					if (typeof node !== 'object') {
+						if (fallbackIdentifier && this.getOnenetFieldByIdentifier(fallbackIdentifier)) {
+							result.push({ identifier: fallbackIdentifier, value: node });
+						}
+						return;
+					}
+					if (visited.has(node)) return;
+					visited.add(node);
+
+					if (Array.isArray(node)) {
+						node.forEach(item => scan(item, fallbackIdentifier));
+						return;
+					}
+
+					const identifier = this.getOnenetItemIdentifier(node) || fallbackIdentifier;
+					if (identifier && this.getOnenetFieldByIdentifier(identifier) && this.hasOnenetItemValue(node)) {
+						result.push({ identifier, value: this.getOnenetItemValue(node) });
+					}
+
+					Object.keys(node).forEach(key => {
+						const value = node[key];
+						if (this.getOnenetFieldByIdentifier(key)) {
+							result.push({ identifier: key, value: this.getOnenetItemValue({ value }) });
+							return;
+						}
+						if (['data', 'list', 'properties', 'property', 'params', 'items', 'datastreams', 'property_list'].includes(String(key).toLowerCase())) {
+							scan(value, identifier);
+							return;
+						}
+						if (value && typeof value === 'object') scan(value, identifier);
+					});
+				};
+				scan(payload);
+				return result;
+			},
+			getOnenetItemIdentifier(item) {
+				return String(item.identifier || item.property_id || item.propertyId || item.id || item.name || item.code || item.key || '').trim();
+			},
+			hasOnenetItemValue(item) {
+				return item && (
+					item.value !== undefined ||
+					item.property_value !== undefined ||
+					item.current_value !== undefined ||
+					item.currentValue !== undefined ||
+					item.val !== undefined
+				);
+			},
+			getOnenetItemValue(item) {
+				const unwrap = value => {
+					if (value && typeof value === 'object') {
+						if (value.value !== undefined && value.value !== null) return unwrap(value.value);
+						if (value.property_value !== undefined && value.property_value !== null) return unwrap(value.property_value);
+						if (value.current_value !== undefined && value.current_value !== null) return unwrap(value.current_value);
+						if (value.currentValue !== undefined && value.currentValue !== null) return unwrap(value.currentValue);
+						if (value.val !== undefined && value.val !== null) return unwrap(value.val);
+					}
+					return value;
+				};
+				if (item.value !== undefined && item.value !== null) return unwrap(item.value);
+				if (item.property_value !== undefined && item.property_value !== null) return item.property_value;
+				if (item.current_value !== undefined && item.current_value !== null) return item.current_value;
+				if (item.currentValue !== undefined && item.currentValue !== null) return item.currentValue;
+				if (item.val !== undefined && item.val !== null) return item.val;
+				return '';
+			},
+			normalizeOnenetIdentifier(identifier) {
+				return String(identifier || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+			},
+			getOnenetFieldByIdentifier(identifier) {
+				const fieldMap = {
+					temperature: 'temp',
+					humidity: 'humi',
+					heartrate: 'heartRate',
+					bloodoxygen: 'bloodOxygen',
+					mq2: 'MQ2',
+					mq7: 'MQ7',
+					nfc: 'area',
+					area: 'area',
+					mpu6050: 'sstatus',
+					sstatus: 'sstatus',
+					status: 'sstatus',
+					help: 'help'
+				};
+				return fieldMap[this.normalizeOnenetIdentifier(identifier)] || '';
+			},
+			applyOnenetProperty(identifier, value) {
+				const val = value === '' || value === undefined || value === null ? '0' : String(value);
+				const field = this.getOnenetFieldByIdentifier(identifier);
+				if (!field) return false;
+				this[field] = val;
+				return true;
+			},
+			markOnenetSuccess() {
+				this.onenetFailCount = 0;
+				this.isOnenetConnected = true;
+				this.onenetErrorMessage = '';
+			},
+			markOnenetFailure(message, payload) {
+				this.onenetFailCount += 1;
+				this.onenetErrorMessage = this.onenetFailCount >= this.onenetMaxFailCount
+					? message
+					: `云端重连中 ${this.onenetFailCount}/${this.onenetMaxFailCount}`;
+				if (this.onenetFailCount >= this.onenetMaxFailCount) {
+					this.isOnenetConnected = false;
+				}
+				if (payload) console.warn('OneNET query failed:', payload);
+			},
+			base64ToBytes(base64) {
+				const binary = atob(base64);
+				const bytes = new Uint8Array(binary.length);
+				for (let i = 0; i < binary.length; i += 1) {
+					bytes[i] = binary.charCodeAt(i);
+				}
+				return bytes;
+			},
+			bytesToBase64(bytes) {
+				let binary = '';
+				const chunkSize = 0x8000;
+				for (let i = 0; i < bytes.length; i += chunkSize) {
+					binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+				}
+				return btoa(binary);
+			},
+			async getOnenetAuth() {
+				if (!ONENET_AUTH_KEY) return '';
+				if (ONENET_AUTH_KEY.indexOf('version=') === 0) return ONENET_AUTH_KEY;
+				const now = Math.floor(Date.now() / 1000);
+				if (this.onenetAuthToken && this.onenetAuthExpireAt - now > 300) return this.onenetAuthToken;
+				if (typeof crypto === 'undefined' || !crypto.subtle) return ONENET_AUTH_KEY;
+
+				const version = '2022-05-01';
+				const method = 'sha1';
+				const et = String(now + 3600 * 24 * 7);
+				const res = `products/${ONENET_PRODUCT_ID}`;
+				const signText = `${et}\n${method}\n${res}\n${version}`;
+				const key = await crypto.subtle.importKey(
+					'raw',
+					this.base64ToBytes(ONENET_AUTH_KEY),
+					{ name: 'HMAC', hash: 'SHA-1' },
+					false,
+					['sign']
+				);
+				const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(signText));
+				const sign = this.bytesToBase64(new Uint8Array(signature));
+				this.onenetAuthToken = `version=${version}&res=${encodeURIComponent(res)}&et=${et}&method=${method}&sign=${encodeURIComponent(sign)}`;
+				this.onenetAuthExpireAt = Number(et);
+				return this.onenetAuthToken;
+			},
+			async fetchDevData() {
+				if (this.isFetchingOnenet) return;
+				const authorization = await this.getOnenetAuth();
+				if (!authorization) {
+					this.markOnenetFailure('缺少 OneNET Authorization');
+					this.isFetchingOnenet = false;
+					return;
+				}
+				this.isFetchingOnenet = true;
 				uni.request({
 					url: ONENET_QUERY_URL,
-					method: IS_LOCAL_DEEPSEEK ? 'GET' : 'POST',
-					data: IS_LOCAL_DEEPSEEK ? {
-						product_id: '0TC2zqK8BU',
-						device_name: 'ESP32S3'
-					} : {},
-					header: IS_LOCAL_DEEPSEEK ? {
-						'Authorization': this.token,
-						'Content-Type': 'application/json'
-					} : {
+					method: 'GET',
+					data: {
+						product_id: ONENET_PRODUCT_ID,
+						device_name: ONENET_DEVICE_NAME
+					},
+					header: {
+						'Authorization': authorization,
 						'Content-Type': 'application/json'
 					},
-					timeout: 5000,
+					timeout: 10000,
 					success: (res) => {
-						console.log(res.data);
-						this.isOnenetConnected = true;
-						if (res.data.code === 0 && res.data.data && res.data.data.length > 0) {
-							res.data.data.forEach(item => {
-								switch (item.identifier) {
-									case 'temperature': this.temp = item.value || '0'; break;
-									case 'Humidity': this.humi = item.value || '0'; break;
-									case 'Heart_rate': this.heartRate = item.value || '0'; break;
-									case 'blood_oxygen': this.bloodOxygen = item.value || '0'; break;
-									case 'MQ2': this.MQ2 = item.value || '0'; break;
-									case 'MQ7': this.MQ7 = item.value || '0'; break;
-									case 'NFC': this.area = item.value || '0'; break;
-									case 'MPU6050': this.sstatus = item.value || '0'; break;
-									case 'Help': this.help = item.value || '0'; break;
-								}
-							});
-							this.updateTime = this.formatTime(new Date());
-							this.recordHistory();
-							this.setColorGradient();
-							const alarmChanged = this.checkAlarmThreshold();
-							if (alarmChanged) this.analyzeDataWithDeepseek(true);
+						const payload = res.data || {};
+						console.log('OneNET query:', payload);
+						if (payload.error) {
+							this.markOnenetFailure(payload.error, payload);
+							return;
 						}
+						if (payload.code !== undefined && Number(payload.code) !== 0) {
+							this.markOnenetFailure(payload.msg || payload.error || 'OneNET 返回异常', payload);
+							return;
+						}
+						const properties = this.getOnenetPropertyList(payload);
+						let appliedCount = 0;
+						properties.forEach(item => {
+							const identifier = this.getOnenetItemIdentifier(item);
+							const value = this.getOnenetItemValue(item);
+							if (this.applyOnenetProperty(identifier, value)) appliedCount += 1;
+						});
+						if (appliedCount === 0) {
+							this.markOnenetFailure('没有解析到设备属性', payload);
+							return;
+						}
+						this.markOnenetSuccess();
+						this.updateTime = this.formatTime(new Date());
+						this.recordHistory();
+						this.setColorGradient();
+						const alarmChanged = this.checkAlarmThreshold();
+						if (alarmChanged) this.analyzeDataWithDeepseek(true);
 					},
 					fail: (err) => {
 						console.error('request error:', err);
-						this.isOnenetConnected = false;
+						this.markOnenetFailure(err && err.errMsg ? err.errMsg : '请求 OneNET 失败');
+					},
+					complete: () => {
+						this.isFetchingOnenet = false;
 					}
 				});
 			},
@@ -916,6 +1135,14 @@
 				if (force) return true;
 				return false;
 			},
+			getAiErrorMessage(res, fallback = 'AI 调用失败') {
+				const data = res && res.data;
+				if (!data) return fallback;
+				if (typeof data === 'string') return data;
+				const detail = data.detail;
+				const detailMessage = detail && detail.error && (detail.error.message || detail.error);
+				return data.error || data.message || detailMessage || fallback;
+			},
 			analyzeDataWithDeepseek(force = false) {
 				if (!this.shouldAnalyzeWithAi(force)) return;
 
@@ -938,6 +1165,15 @@
 
 						if (!decision) {
 							console.warn('DeepSeek AI decision parse failed:', res.data);
+							this.aiDecision = {
+								riskLevel: 'watch',
+								confidence: 0,
+								summary: 'AI 分析失败',
+								reason: this.getAiErrorMessage(res, 'DeepSeek 没有返回有效分析结果'),
+								abnormalItems: [],
+								trend: '暂无 AI 趋势结论',
+								suggestion: '请检查 DeepSeek API Key、模型配置和网络'
+							};
 							return;
 						}
 
@@ -946,6 +1182,15 @@
 					},
 					fail: (err) => {
 						console.error('DeepSeek AI request failed:', err);
+						this.aiDecision = {
+							riskLevel: 'watch',
+							confidence: 0,
+							summary: 'AI 请求失败',
+							reason: '无法连接 DeepSeek 服务。' + (err && err.errMsg ? err.errMsg : ''),
+							abnormalItems: [],
+							trend: '暂无 AI 趋势结论',
+							suggestion: '本地运行请启动 DeepSeek Proxy，线上请检查 Netlify 环境变量'
+						};
 					},
 					complete: () => {
 						this.isAiAnalyzing = false;
@@ -954,6 +1199,7 @@
 			},
 			openAiChat() {
 				this.aiChatVisible = true;
+				this.scrollAiChatToBottom();
 			},
 			closeAiChat() {
 				this.aiChatVisible = false;
@@ -981,11 +1227,26 @@
 				});
 				if (this.aiChatMessages.length > 80) this.aiChatMessages.shift();
 				this.saveAiChatMessages();
+				this.scrollAiChatToBottom();
 			},
 			clearAiChat() {
 				this.aiChatMessages = [];
 				this.aiAnswer = '';
 				this.saveAiChatMessages();
+				this.scrollAiChatToBottom();
+			},
+			scrollAiChatToBottom() {
+				this.$nextTick(() => {
+					this.aiChatScrollTop = 0;
+					this.$nextTick(() => {
+						this.aiChatScrollTop = 999999;
+					});
+				});
+			},
+			askAiQuickQuestion(question) {
+				if (this.isAiChatting) return;
+				this.aiQuestion = question;
+				this.askAiQuestion();
 			},
 			askAiQuestion() {
 				const question = (this.aiQuestion || '').trim();
@@ -1001,6 +1262,7 @@
 					content: '正在分析...',
 					time: this.formatTime(new Date()).slice(11, 16)
 				});
+				this.scrollAiChatToBottom();
 
 				uni.request({
 					url: DEEPSEEK_CHAT_URL,
@@ -1015,22 +1277,23 @@
 					timeout: 15000,
 					success: (res) => {
 						const answer = res.data && res.data.answer;
-						if (!answer) {
-							this.aiAnswer = 'AI 暂时没有返回有效回答。';
+						if (!answer || !answer.answer) {
+							this.aiAnswer = this.getAiErrorMessage(res, 'AI 暂时没有返回有效回答。');
 							this.aiChatMessages.splice(loadingIndex, 1, {
 								...this.aiChatMessages[loadingIndex],
 								content: this.aiAnswer
 							});
 							this.saveAiChatMessages();
+							this.scrollAiChatToBottom();
 							return;
 						}
-						const evidence = answer.evidence && answer.evidence.length ? '\n依据：' + answer.evidence[0] : '';
-						this.aiAnswer = (answer.answer || '暂无可用回答') + evidence;
+						this.aiAnswer = answer.answer || '暂无可用回答';
 						this.aiChatMessages.splice(loadingIndex, 1, {
 							...this.aiChatMessages[loadingIndex],
 							content: this.aiAnswer
 						});
 						this.saveAiChatMessages();
+						this.scrollAiChatToBottom();
 					},
 					fail: (err) => {
 						this.aiAnswer = 'AI 对话失败，请确认 DeepSeek Proxy 已启动。' + (err && err.errMsg ? '\n' + err.errMsg : '');
@@ -1039,6 +1302,7 @@
 							content: this.aiAnswer
 						});
 						this.saveAiChatMessages();
+						this.scrollAiChatToBottom();
 					},
 					complete: () => {
 						this.isAiChatting = false;
@@ -1060,51 +1324,69 @@
 					}
 				}
 			},
-			sendEvacuationCmd(retryCount = 0) {
-				if (this.isSending) return;
-				if (!this.isOnenetConnected) {
-					uni.showToast({ title: 'OneNET 未连接，无法发送指令', icon: 'error', duration: 3000 });
-					return;
+			async setEvacuationDesired() {
+				const authorization = await this.getOnenetAuth();
+				if (!authorization) {
+					uni.showModal({ title: '发送失败', content: '代码里的 OneNET 密钥还没填写。', showCancel: false });
+					return false;
 				}
+
+				return new Promise(resolve => {
+					uni.request({
+						url: ONENET_SET_DESIRED_URL,
+						method: 'POST',
+						header: {
+							'Authorization': authorization,
+							'Content-Type': 'application/json'
+						},
+						data: {
+							product_id: ONENET_PRODUCT_ID,
+							device_name: ONENET_DEVICE_NAME,
+							params: { Leave: 'true' }
+						},
+						timeout: 10000,
+						success: (res) => {
+							if (res.data && res.data.code === 0) {
+								resolve(true);
+							} else {
+								const message = (res.data && (res.data.msg || res.data.error)) || '未知错误';
+								uni.showModal({ title: '指令下发失败', content: '平台返回：' + message, showCancel: false });
+								resolve(false);
+							}
+						},
+						fail: (err) => {
+							uni.showModal({
+								title: '发送失败',
+								content: '请检查 OneNET、网络和设备名称。' + (err && err.errMsg ? '\n' + err.errMsg : ''),
+								showCancel: false
+							});
+							resolve(false);
+						}
+					});
+				});
+			},
+			async sendEvacuationCmd() {
+				if (this.isSending) return;
 
 				this.isSending = true;
 				uni.showLoading({ title: '发送指令中...', mask: true });
-
-				uni.request({
-					url: ONENET_SET_DESIRED_URL,
-					method: 'POST',
-					header: IS_LOCAL_DEEPSEEK ? {
-						'Authorization': this.token,
-						'Content-Type': 'application/json'
-					} : {
-						'Content-Type': 'application/json'
-					},
-					data: IS_LOCAL_DEEPSEEK ? {
-						product_id: '0TC2zqK8BU',
-						device_name: 'ESP32S3',
-						params: { Leave: 'true' }
-					} : {},
-					timeout: 8000,
-					success: (res) => {
-						uni.hideLoading();
-						if (res.data && res.data.code === 0) {
-							uni.showToast({ title: '紧急撤离指令发送成功', icon: 'success', duration: 2000 });
-						} else {
-							uni.showModal({ title: '指令下发失败', content: '平台返回：' + ((res.data && res.data.msg) || '未知错误'), showCancel: false });
-						}
-						this.isSending = false;
-					},
-					fail: (err) => {
-						uni.hideLoading();
-						if (retryCount < this.maxRetryTimes) {
-							this.isSending = false;
-							setTimeout(() => this.sendEvacuationCmd(retryCount + 1), this.retryDelay);
-						} else {
-							uni.showModal({ title: '发送失败', content: '请检查 OneNET Token、网络和设备名称。', showCancel: false });
-							this.isSending = false;
-						}
+				try {
+					const ok = await this.setEvacuationDesired();
+					uni.hideLoading();
+					if (ok) {
+						this.markOnenetSuccess();
+						uni.showToast({ title: '紧急撤离指令发送成功', icon: 'success', duration: 2000 });
 					}
-				});
+				} catch (err) {
+					uni.hideLoading();
+					uni.showModal({
+						title: '发送失败',
+						content: '撤离指令发送异常。' + (err && err.message ? '\n' + err.message : ''),
+						showCancel: false
+					});
+				} finally {
+					this.isSending = false;
+				}
 			}
 		}
 	}
@@ -1650,12 +1932,15 @@
 	.ai-panel {
 		position: relative;
 		z-index: 1;
-		background: linear-gradient(135deg, rgba(8, 47, 73, 0.72), rgba(15, 23, 42, 0.9));
-		border: 1px solid rgba(56, 189, 248, 0.24);
-		border-radius: 18rpx;
-		padding: 32rpx;
+		background:
+			radial-gradient(circle at 12% 18%, rgba(34, 211, 238, 0.22), transparent 34%),
+			radial-gradient(circle at 88% 8%, rgba(34, 197, 94, 0.18), transparent 30%),
+			linear-gradient(135deg, rgba(8, 47, 73, 0.84), rgba(15, 23, 42, 0.94));
+		border: 1px solid rgba(125, 211, 252, 0.34);
+		border-radius: 24rpx;
+		padding: 34rpx;
 		margin-bottom: 32rpx;
-		box-shadow: 0 18rpx 46rpx rgba(2, 6, 23, 0.22);
+		box-shadow: 0 24rpx 70rpx rgba(2, 6, 23, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 		overflow: hidden;
 	}
 
@@ -1667,6 +1952,14 @@
 		right: 0;
 		height: 4rpx;
 		background: linear-gradient(90deg, #38bdf8, #22c55e, #f59e0b);
+	}
+
+	.ai-panel-glow {
+		position: absolute;
+		inset: 18rpx;
+		border: 1px solid rgba(125, 211, 252, 0.08);
+		border-radius: 20rpx;
+		pointer-events: none;
 	}
 
 	.ai-panel-head {
@@ -1691,58 +1984,106 @@
 	}
 
 	.ai-icon {
-		width: 64rpx;
-		height: 64rpx;
-		border-radius: 16rpx;
-		background: rgba(56, 189, 248, 0.16);
-		color: #7dd3fc;
+		width: 76rpx;
+		height: 76rpx;
+		border-radius: 22rpx;
+		background: linear-gradient(135deg, rgba(56, 189, 248, 0.3), rgba(34, 197, 94, 0.22));
+		color: #e0f2fe;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		font-size: 24rpx;
+		font-size: 26rpx;
 		font-weight: 900;
-		border: 1px solid rgba(125, 211, 252, 0.28);
+		border: 1px solid rgba(125, 211, 252, 0.42);
+		box-shadow: 0 0 36rpx rgba(56, 189, 248, 0.22);
 		flex-shrink: 0;
+	}
+
+	.ai-kicker {
+		color: #67e8f9;
+		font-size: 20rpx;
+		font-weight: 900;
+		letter-spacing: 0;
+		margin-bottom: 4rpx;
 	}
 
 	.ai-title {
 		color: #f8fafc;
-		font-size: 34rpx;
-		font-weight: 800;
+		font-size: 40rpx;
+		font-weight: 900;
 	}
 
 	.ai-subtitle {
 		margin-top: 6rpx;
-		color: rgba(148, 163, 184, 0.78);
-		font-size: 24rpx;
+		color: rgba(203, 213, 225, 0.82);
+		font-size: 25rpx;
 	}
 
 	.ai-analyze-btn {
 		margin: 0;
-		padding: 0 28rpx;
-		height: 64rpx;
-		line-height: 64rpx;
-		border-radius: 14rpx;
-		background: linear-gradient(135deg, #0ea5e9, #16a34a);
+		padding: 0 30rpx;
+		height: 72rpx;
+		line-height: 72rpx;
+		border-radius: 18rpx;
+		background: linear-gradient(135deg, #22c55e, #0ea5e9);
 		color: #fff;
 		font-size: 26rpx;
 		font-weight: 800;
 		border: 1px solid rgba(255, 255, 255, 0.16);
 		white-space: nowrap;
+		box-shadow: 0 16rpx 34rpx rgba(14, 165, 233, 0.24);
 	}
 
 	.ai-chat-btn {
 		margin: 0;
-		padding: 0 28rpx;
-		height: 64rpx;
-		line-height: 64rpx;
-		border-radius: 14rpx;
-		background: rgba(15, 23, 42, 0.82);
-		color: #7dd3fc;
+		padding: 0 30rpx;
+		height: 72rpx;
+		line-height: 72rpx;
+		border-radius: 18rpx;
+		background: linear-gradient(135deg, rgba(14, 165, 233, 0.95), rgba(8, 145, 178, 0.92));
+		color: #ffffff;
 		font-size: 26rpx;
 		font-weight: 800;
-		border: 1px solid rgba(125, 211, 252, 0.28);
+		border: 1px solid rgba(125, 211, 252, 0.38);
 		white-space: nowrap;
+		box-shadow: 0 16rpx 42rpx rgba(6, 182, 212, 0.3);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8rpx;
+	}
+
+	.ai-btn-mark {
+		font-size: 28rpx;
+		color: #fef08a;
+	}
+
+	.ai-signal-row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12rpx;
+		margin-bottom: 24rpx;
+	}
+
+	.ai-signal-pill {
+		display: flex;
+		align-items: center;
+		gap: 10rpx;
+		min-height: 46rpx;
+		padding: 0 18rpx;
+		border-radius: 999rpx;
+		background: rgba(15, 23, 42, 0.58);
+		border: 1px solid rgba(125, 211, 252, 0.16);
+		color: rgba(226, 232, 240, 0.82);
+		font-size: 22rpx;
+	}
+
+	.ai-signal-dot {
+		width: 12rpx;
+		height: 12rpx;
+		border-radius: 50%;
+		background: #22c55e;
+		box-shadow: 0 0 18rpx rgba(34, 197, 94, 0.95);
 	}
 
 	.ai-analyze-btn:disabled {
@@ -1758,10 +2099,11 @@
 	}
 
 	.ai-stat {
-		background: rgba(15, 23, 42, 0.58);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 14rpx;
+		background: rgba(15, 23, 42, 0.68);
+		border: 1px solid rgba(125, 211, 252, 0.12);
+		border-radius: 18rpx;
 		padding: 22rpx;
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 	}
 
 	.ai-label {
@@ -1799,7 +2141,9 @@
 	.ai-chat-overlay {
 		position: fixed;
 		inset: 0;
-		background: rgba(2, 6, 23, 0.76);
+		background:
+			linear-gradient(135deg, rgba(2, 6, 23, 0.88), rgba(8, 47, 73, 0.74)),
+			rgba(2, 6, 23, 0.78);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -1809,14 +2153,17 @@
 
 	.ai-chat-modal {
 		width: 100%;
-		max-width: 980rpx;
-		height: min(82vh, 980rpx);
-		background: linear-gradient(145deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.96));
-		border: 1px solid rgba(125, 211, 252, 0.18);
-		border-radius: 22rpx;
-		padding: 28rpx;
+		max-width: 1100rpx;
+		height: min(86vh, 1040rpx);
+		background:
+			radial-gradient(circle at 12% 4%, rgba(34, 211, 238, 0.22), transparent 34%),
+			radial-gradient(circle at 90% 2%, rgba(245, 158, 11, 0.13), transparent 30%),
+			linear-gradient(145deg, rgba(15, 23, 42, 0.99), rgba(2, 6, 23, 0.97));
+		border: 1px solid rgba(125, 211, 252, 0.32);
+		border-radius: 28rpx;
+		padding: 30rpx;
 		position: relative;
-		box-shadow: 0 36rpx 90rpx rgba(0, 0, 0, 0.48);
+		box-shadow: 0 40rpx 120rpx rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
@@ -1832,12 +2179,35 @@
 		background: linear-gradient(90deg, #38bdf8, #22c55e, #f59e0b);
 	}
 
+	.ai-chat-orbit {
+		position: absolute;
+		border-radius: 50%;
+		border: 1px solid rgba(125, 211, 252, 0.1);
+		pointer-events: none;
+	}
+
+	.ai-chat-orbit.one {
+		width: 360rpx;
+		height: 360rpx;
+		right: -120rpx;
+		top: -130rpx;
+	}
+
+	.ai-chat-orbit.two {
+		width: 220rpx;
+		height: 220rpx;
+		left: -80rpx;
+		bottom: 80rpx;
+	}
+
 	.ai-chat-head {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 20rpx;
 		margin-bottom: 20rpx;
+		position: relative;
+		z-index: 1;
 	}
 
 	.ai-chat-head-actions {
@@ -1848,10 +2218,10 @@
 	}
 
 	.ai-chat-close {
-		width: 60rpx;
-		height: 60rpx;
-		border-radius: 16rpx;
-		background: rgba(148, 163, 184, 0.14);
+		width: 64rpx;
+		height: 64rpx;
+		border-radius: 18rpx;
+		background: rgba(148, 163, 184, 0.16);
 		color: #e2e8f0;
 		padding: 0;
 		display: flex;
@@ -1864,9 +2234,9 @@
 
 	.ai-chat-clear {
 		margin: 0;
-		height: 60rpx;
-		line-height: 60rpx;
-		border-radius: 16rpx;
+		height: 64rpx;
+		line-height: 64rpx;
+		border-radius: 18rpx;
 		background: rgba(15, 23, 42, 0.78);
 		color: #93c5fd;
 		border: 1px solid rgba(147, 197, 253, 0.18);
@@ -1874,9 +2244,17 @@
 		padding: 0 22rpx;
 	}
 
+	.ai-chat-kicker {
+		color: #67e8f9;
+		font-size: 20rpx;
+		font-weight: 900;
+		letter-spacing: 0;
+		margin-bottom: 6rpx;
+	}
+
 	.ai-chat-title {
 		color: #f8fafc;
-		font-size: 38rpx;
+		font-size: 46rpx;
 		font-weight: 900;
 		margin-bottom: 8rpx;
 	}
@@ -1886,13 +2264,83 @@
 		font-size: 24rpx;
 	}
 
+	.ai-chat-metrics {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 14rpx;
+		margin-bottom: 16rpx;
+	}
+
+	.ai-chat-metric {
+		background: rgba(15, 23, 42, 0.72);
+		border: 1px solid rgba(125, 211, 252, 0.16);
+		border-radius: 18rpx;
+		padding: 18rpx 20rpx;
+	}
+
+	.metric-label {
+		display: block;
+		color: rgba(148, 163, 184, 0.72);
+		font-size: 21rpx;
+		margin-bottom: 6rpx;
+	}
+
+	.metric-value {
+		display: block;
+		color: #e0f2fe;
+		font-size: 28rpx;
+		font-weight: 900;
+	}
+
+	.ai-chat-quick-row {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 12rpx;
+		margin-bottom: 18rpx;
+	}
+
+	.ai-chat-quick {
+		margin: 0;
+		min-height: 54rpx;
+		line-height: 54rpx;
+		border-radius: 999rpx;
+		background: rgba(8, 47, 73, 0.72);
+		color: #bae6fd;
+		border: 1px solid rgba(125, 211, 252, 0.22);
+		font-size: 23rpx;
+		padding: 0 20rpx;
+	}
+
+	.ai-chat-quick::after,
+	.ai-chat-send::after {
+		border: none;
+	}
+
+	.ai-chat-quick[disabled],
+	.ai-chat-quick:disabled {
+		background: rgba(8, 47, 73, 0.58) !important;
+		color: rgba(186, 230, 253, 0.62) !important;
+		border-color: rgba(125, 211, 252, 0.14) !important;
+		opacity: 1;
+	}
+
 	.ai-chat-messages {
+		position: relative;
+		z-index: 1;
 		flex: 1;
 		min-height: 0;
-		background: rgba(2, 6, 23, 0.35);
-		border: 1px solid rgba(148, 163, 184, 0.12);
-		border-radius: 18rpx;
-		padding: 22rpx;
+		background:
+			linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+			rgba(2, 6, 23, 0.42);
+		background-size: 48rpx 48rpx;
+		border: 1px solid rgba(148, 163, 184, 0.16);
+		border-radius: 22rpx;
+		padding: 24rpx;
 		margin-bottom: 20rpx;
 		box-sizing: border-box;
 	}
@@ -1901,7 +2349,20 @@
 		color: rgba(148, 163, 184, 0.78);
 		font-size: 26rpx;
 		line-height: 1.6;
-		padding: 16rpx 4rpx;
+		padding: 28rpx 4rpx;
+		text-align: center;
+	}
+
+	.ai-chat-empty-title {
+		color: #e0f2fe;
+		font-size: 30rpx;
+		font-weight: 900;
+		margin-bottom: 8rpx;
+	}
+
+	.ai-chat-empty-text {
+		color: rgba(148, 163, 184, 0.8);
+		font-size: 24rpx;
 	}
 
 	.ai-chat-message {
@@ -1920,8 +2381,8 @@
 
 	.ai-chat-bubble {
 		max-width: 82%;
-		border-radius: 18rpx;
-		padding: 18rpx 22rpx;
+		border-radius: 22rpx;
+		padding: 20rpx 24rpx;
 		font-size: 27rpx;
 		line-height: 1.62;
 		white-space: pre-wrap;
@@ -1929,15 +2390,16 @@
 	}
 
 	.ai-chat-message.user .ai-chat-bubble {
-		background: linear-gradient(135deg, #0891b2, #16a34a);
+		background: linear-gradient(135deg, #0ea5e9, #16a34a);
 		color: #ffffff;
 		border-bottom-right-radius: 6rpx;
+		box-shadow: 0 14rpx 34rpx rgba(14, 165, 233, 0.22);
 	}
 
 	.ai-chat-message.assistant .ai-chat-bubble {
 		background: rgba(15, 23, 42, 0.92);
 		color: rgba(226, 232, 240, 0.94);
-		border: 1px solid rgba(148, 163, 184, 0.14);
+		border: 1px solid rgba(125, 211, 252, 0.18);
 		border-bottom-left-radius: 6rpx;
 	}
 
@@ -1948,16 +2410,22 @@
 	}
 
 	.ai-chat-form {
+		position: relative;
+		z-index: 1;
 		display: flex;
 		gap: 16rpx;
+		background: rgba(15, 23, 42, 0.56);
+		border: 1px solid rgba(125, 211, 252, 0.12);
+		border-radius: 22rpx;
+		padding: 12rpx;
 	}
 
 	.ai-chat-input {
 		flex: 1;
 		height: 72rpx;
-		border-radius: 16rpx;
-		background: rgba(15, 23, 42, 0.82);
-		border: 1px solid rgba(125, 211, 252, 0.18);
+		border-radius: 18rpx;
+		background: rgba(2, 6, 23, 0.58);
+		border: 1px solid rgba(125, 211, 252, 0.2);
 		color: #f8fafc;
 		padding: 0 22rpx;
 		font-size: 26rpx;
@@ -1967,11 +2435,19 @@
 		margin: 0;
 		height: 72rpx;
 		line-height: 72rpx;
-		border-radius: 16rpx;
-		background: linear-gradient(135deg, #0ea5e9, #16a34a);
+		border-radius: 18rpx;
+		background: linear-gradient(135deg, #22c55e, #0ea5e9);
 		color: #fff;
 		font-weight: 800;
-		padding: 0 32rpx;
+		padding: 0 38rpx;
+		box-shadow: 0 14rpx 30rpx rgba(34, 197, 94, 0.22);
+	}
+
+	.ai-chat-send[disabled],
+	.ai-chat-send:disabled {
+		background: linear-gradient(135deg, rgba(34, 197, 94, 0.62), rgba(14, 165, 233, 0.62)) !important;
+		color: rgba(255, 255, 255, 0.72) !important;
+		opacity: 1;
 	}
 
 	.evacuation-section {
@@ -2491,8 +2967,23 @@
 		.ai-chat-btn {
 			width: 100%;
 		}
+		.ai-signal-row {
+			flex-direction: column;
+		}
 		.ai-grid {
 			grid-template-columns: 1fr;
+		}
+		.ai-chat-title {
+			font-size: 38rpx;
+		}
+		.ai-chat-metrics {
+			grid-template-columns: 1fr;
+		}
+		.ai-chat-quick-row {
+			flex-direction: column;
+		}
+		.ai-chat-quick {
+			width: 100%;
 		}
 		.ai-chat-form {
 			flex-direction: column;

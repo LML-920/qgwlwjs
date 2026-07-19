@@ -9,4 +9,5 @@ unpackage/dist/build/*
 .hbuilderx/
 .DS_Store
 config/deepseek.private.js
+config/onenet.private.js
 deepseek-proxy.*.log
